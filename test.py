@@ -24,7 +24,8 @@ epsilon = 1
 train_indicator = 1    # train or not
 TAU = 0.001
 
-VISION = False
+VISION = True
+SAVE_IMAGES = True # if set to True, will save rgb images (64,64) in current path under /saved_images
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -81,9 +82,12 @@ for i in range(2000):
         ob = env.reset(relaunch = True)
     else:
         ob = env.reset()
-
-    s_t = np.hstack((ob.angle, ob.track, ob.trackPos, ob.speedX, ob.speedY, ob.speedZ, ob.wheelSpinVel/100.0, ob.rpm))
     
+    if not VISION:
+        s_t = np.hstack((ob.angle, ob.track, ob.trackPos, ob.speedX, ob.speedY, ob.speedZ, ob.wheelSpinVel/100.0, ob.rpm))
+    else:
+        s_t = np.hstack((ob.angle, ob.track, ob.trackPos, ob.speedX, ob.speedY, ob.speedZ, ob.wheelSpinVel/100.0, ob.rpm))
+        
     for j in range(100000):
         loss = 0
         epsilon -= 1.0 / EXPLORE
@@ -96,8 +100,7 @@ for i in range(2000):
             a_t_original = a_t_original.data.cpu().numpy()
         else:
             a_t_original = a_t_original.data.numpy()
-        #print(type(a_t_original[0][0]))
-
+    
         noise_t[0][0] = train_indicator * max(epsilon, 0) * OU.function(a_t_original[0][0], 0.0, 0.60, 0.30)
         noise_t[0][1] = train_indicator * max(epsilon, 0) * OU.function(a_t_original[0][1], 0.5, 1.00, 0.10)
         noise_t[0][2] = train_indicator * max(epsilon, 0) * OU.function(a_t_original[0][2], -0.1, 1.00, 0.05)
@@ -112,8 +115,19 @@ for i in range(2000):
         a_t[0][2] = a_t_original[0][2] + noise_t[0][2]
 
         ob, r_t, done, info = env.step(a_t[0])
+        
+        if SAVE_IMAGES:
+            # Make directory to save images
+            SAVE_IMAGE_DIRECTORY_path = pathlib.Path.cwd() / "saved_images"
+            SAVE_IMAGE_DIRECTORY_path.mkdir(parents=True, exist_ok=True)
+            image_name = SAVE_IMAGE_DIRECTORY_path/f"_{j}.jpeg"
+            im = Image.fromarray(np.rot90(ob.img.T)) #ob.img had a shape of (3, 64, 64) causing error in Image.fromarray => taking Transpose to convert to (64,64,3)
+            im.save(image_name)
 
-        s_t1 = np.hstack((ob.angle, ob.track, ob.trackPos, ob.speedX, ob.speedY, ob.speedZ, ob.wheelSpinVel/100.0, ob.rpm))
+        if not VISION:
+            s_t1 = np.hstack((ob.angle, ob.track, ob.trackPos, ob.speedX, ob.speedY, ob.speedZ, ob.wheelSpinVel/100.0, ob.rpm))
+        else:
+            s_t1 = np.hstack((ob.angle, ob.track, ob.trackPos, ob.speedX, ob.speedY, ob.speedZ, ob.wheelSpinVel/100.0, ob.rpm))
 
         #add to replay buffer
         buff.add(s_t, a_t[0], r_t, s_t1, done)
