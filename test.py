@@ -7,7 +7,7 @@ import argparse
 import collections
 #import ipdb
 import pathlib
-import PIL
+from PIL import Image
 
 from ReplayBuffer import ReplayBuffer
 from ActorNetwork import ActorNetwork
