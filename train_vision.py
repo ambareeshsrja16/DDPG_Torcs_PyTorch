@@ -56,7 +56,7 @@ transform = transforms.Compose([            #[1]
 ftr_extractor = torchvision.models.resnet18(pretrained=True)
 ftr_extractor = torch.nn.Sequential(*(list(ftr_extractor.children())[:-1]))
 ftr_extractor.eval()
-
+ftr_extractor.to(device)
 #load model
 print("loading model")
 try:
@@ -164,7 +164,7 @@ for i in range(2000):
             s_t1 = ftr_extractor(s_t1.float()).squeeze()
 
         #add to replay buffer
-        buff.add(s_t.data.numpy(), a_t[0], r_t, s_t1.data.numpy(), done)
+        buff.add(s_t.cpu().detach().numpy(), a_t[0], r_t, s_t1.cpu().detach().numpy(), done)
 
         batch = buff.getBatch(BATCH_SIZE)
 
