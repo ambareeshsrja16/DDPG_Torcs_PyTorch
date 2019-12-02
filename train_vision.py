@@ -104,7 +104,12 @@ for i in range(2000):
     else:
         # vision as input
         s_t = np.rot90(ob.img.T)
-        s_t = ftr_extractor(transform(s_t)).squeeze()
+        # print(s_t.shape)
+        # s_t = transform(s_t)
+        s_t = torch.tensor(s_t.copy(), device=device)
+        s_t = torch.unsqueeze(s_t, 0)
+        s_t = s_t.permute(0,3,1,2)
+        s_t = ftr_extractor(s_t.float()).squeeze()
         
     for j in range(100000):
         loss = 0
@@ -113,9 +118,11 @@ for i in range(2000):
         noise_t = np.zeros([1, action_size])
         #ipdb.set_trace() 
         # original
-        # a_t_original = actor(torch.tensor(s_t.reshape(1, s_t.shape[0]), device=device).float())
+        a_t_original = actor(torch.tensor(s_t.reshape(1, s_t.shape[0]), device=device).float())
 
-        a_t_original = actor(torch.tensor(s_t, device=device).float())
+        # print(s_t.shape)
+        # print(torch.tensor(np.hstack((ob.angle, ob.track, ob.trackPos))).shape)
+        # a_t_original = actor(s_t)
 
 
         if torch.cuda.is_available():
@@ -150,10 +157,14 @@ for i in range(2000):
             s_t1 = np.hstack((ob.angle, ob.track, ob.trackPos, ob.speedX, ob.speedY, ob.speedZ, ob.wheelSpinVel/100.0, ob.rpm))
         else:
             s_t1 = np.rot90(ob.img.T)
-            s_t1 = ftr_extractor(transform(s_t1)).squeeze()
+            # s_t1 = ftr_extractor(torch.unsqueeze(transform(s_t1), 0)).squeeze()
+            s_t1 = torch.tensor(s_t1.copy())
+            s_t1 = torch.unsqueeze(s_t1, 0)
+            s_t1 = s_t1.permute(0,3,1,2)
+            s_t1 = ftr_extractor(s_t1.float()).squeeze()
 
         #add to replay buffer
-        buff.add(s_t, a_t[0], r_t, s_t1, done)
+        buff.add(s_t.data.numpy(), a_t[0], r_t, s_t1.data.numpy(), done)
 
         batch = buff.getBatch(BATCH_SIZE)
 

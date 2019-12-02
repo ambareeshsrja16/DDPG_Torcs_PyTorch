@@ -1,2 +1,3 @@
 actormodel.pth
 criticmodel.pth
+__pycache__/*
