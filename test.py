@@ -78,6 +78,7 @@ if torch.cuda.is_available():
 else:
     torch.set_default_tensor_type('torch.FloatTensor') 
 
+all_rewards = []
 for i in range(2000):
 
     if np.mod(i, 3) == 0:
@@ -89,7 +90,8 @@ for i in range(2000):
         s_t = np.hstack((ob.angle, ob.track, ob.trackPos, ob.speedX, ob.speedY, ob.speedZ, ob.wheelSpinVel/100.0, ob.rpm))
     else:
         s_t = np.hstack((ob.angle, ob.track, ob.trackPos, ob.speedX, ob.speedY, ob.speedZ, ob.wheelSpinVel/100.0, ob.rpm))
-        
+    
+    sum_rewards = 0    
     for j in range(100000):
         loss = 0
         epsilon -= 1.0 / EXPLORE
@@ -194,16 +196,20 @@ for i in range(2000):
             target_critic.load_state_dict(new_critic_state_dict)
         
         s_t = s_t1
+        sum_rewards += r_t
         print("---Episode ", i , "  Action:", a_t, "  Reward:", r_t, "  Loss:", loss)
 
         if done:
             break
+
+    all_rewards.append(sum_rewards)
 
     if np.mod(i, 3) == 0:
         if (train_indicator):
             print("saving model")
             torch.save(actor.state_dict(), 'actormodel.pth')
             torch.save(critic.state_dict(), 'criticmodel.pth')
+            np.save('data/rewards_train.npy', np.array(all_rewards))
 
     
 env.end()

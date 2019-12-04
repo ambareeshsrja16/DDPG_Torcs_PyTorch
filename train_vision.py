@@ -14,7 +14,7 @@ from OU import OU
 import torchvision
 from torchvision import transforms
 
-state_size = 512
+state_size = 29
 action_size = 3
 LRA = 0.0001
 LRC = 0.001
@@ -26,7 +26,10 @@ epsilon = 1
 train_indicator = 1    # train or not
 TAU = 0.001
 
-VISION = True
+VISION = False
+if VISION:
+    state_size = 512
+
 SAVE_IMAGES = False # if set to True, will save rgb images (64,64) in current path under /saved_images
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -92,6 +95,8 @@ if torch.cuda.is_available():
 else:
     torch.set_default_tensor_type('torch.FloatTensor') 
 
+all_rewards = []
+
 for i in range(2000):
 
     if np.mod(i, 3) == 0:
@@ -110,7 +115,8 @@ for i in range(2000):
         s_t = torch.unsqueeze(s_t, 0)
         s_t = s_t.permute(0,3,1,2)
         s_t = ftr_extractor(s_t.float()).squeeze()
-        
+    
+    sum_rewards = 0
     for j in range(100000):
         loss = 0
         epsilon -= 1.0 / EXPLORE
@@ -226,16 +232,20 @@ for i in range(2000):
             target_critic.load_state_dict(new_critic_state_dict)
         
         s_t = s_t1
+        sum_rewards += r_t
         print("---Episode ", i , "  Action:", a_t, "  Reward:", r_t, "  Loss:", loss)
 
         if done:
             break
+
+    all_rewards.append(sum_rewards)
 
     if np.mod(i, 3) == 0:
         if (train_indicator):
             print("saving model")
             torch.save(actor.state_dict(), 'actormodel.pth')
             torch.save(critic.state_dict(), 'criticmodel.pth')
+            np.save('rewards_train', np.array(all_rewards))
 
     
 env.end()

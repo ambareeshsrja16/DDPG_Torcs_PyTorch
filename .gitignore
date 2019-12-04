@@ -1,3 +1,6 @@
 actormodel.pth
 criticmodel.pth
 __pycache__/*
+models/
+data/
+saved_images/
