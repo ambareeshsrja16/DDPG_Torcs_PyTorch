@@ -13,6 +13,7 @@ from ReplayBuffer import ReplayBuffer
 from ActorNetwork import ActorNetwork
 from CriticNetwork import CriticNetwork
 from OU import OU
+import os
 
 state_size = 29
 action_size = 3
@@ -26,8 +27,11 @@ epsilon = 1
 train_indicator = 1    # train or not
 TAU = 0.001
 
-VISION = True
-SAVE_IMAGES = True # if set to True, will save rgb images (64,64) in current path under /saved_images
+VISION = False
+SAVE_IMAGES = False # if set to True, will save rgb images (64,64) in current path under /saved_images
+exp = 'models/test2/'
+if not os.path.isdir(exp):
+    os.mkdir(exp)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -42,16 +46,17 @@ def init_weights(m):
 actor = ActorNetwork(state_size).to(device)
 actor.apply(init_weights)
 critic = CriticNetwork(state_size, action_size).to(device)
+        critic.load_state_dict(torch.load('criticmodel.pth'))
 
 #load model
 print("loading model")
 try:
-
-    actor.load_state_dict(torch.load('actormodel.pth'))
-    actor.eval()
-    critic.load_state_dict(torch.load('criticmodel.pth'))
-    critic.eval()
-    print("model load successfully")
+    if train_indicator==0:
+        actor.load_state_dict(torch.load('actormodel.pth'))
+        actor.eval()
+        critic.load_state_dict(torch.load('criticmodel.pth'))
+        critic.eval()
+        print("model load successfully")
 except:
     print("cannot find the model")
 
@@ -207,9 +212,9 @@ for i in range(2000):
     if np.mod(i, 3) == 0:
         if (train_indicator):
             print("saving model")
-            torch.save(actor.state_dict(), 'actormodel.pth')
-            torch.save(critic.state_dict(), 'criticmodel.pth')
-            np.save('data/rewards_train.npy', np.array(all_rewards))
+            torch.save(actor.state_dict(), exp + 'actormodel.pth')
+            torch.save(critic.state_dict(), exp + 'criticmodel.pth')
+            np.save(exp + 'rewards_train.npy', np.array(all_rewards))
 
     
 env.end()

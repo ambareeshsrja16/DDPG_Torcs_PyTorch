@@ -6,6 +6,7 @@ from gym_torcs import TorcsEnv
 import argparse
 import collections
 #import ipdb
+import os
 
 from ReplayBuffer import ReplayBuffer
 from ActorNetwork import ActorNetwork
@@ -16,6 +17,7 @@ from torchvision import transforms
 
 state_size = 29
 action_size = 3
+car_state_size = 9
 LRA = 0.0001
 LRC = 0.001
 BUFFER_SIZE = 100000  #to change
@@ -26,9 +28,14 @@ epsilon = 1
 train_indicator = 1    # train or not
 TAU = 0.001
 
-VISION = False
+VISION = True
 if VISION:
-    state_size = 512
+    state_size = 512 + car_state_size
+
+exp = 'models/res_newh32_ct1/'
+if not os.path.isdir(exp):
+    os.mkdir(exp)
+
 
 SAVE_IMAGES = False # if set to True, will save rgb images (64,64) in current path under /saved_images
 
@@ -63,12 +70,12 @@ ftr_extractor.to(device)
 #load model
 print("loading model")
 try:
-
-    actor.load_state_dict(torch.load('actormodel.pth'))
-    actor.eval()
-    critic.load_state_dict(torch.load('criticmodel.pth'))
-    critic.eval()
-    print("model load successfully")
+    if train_indicator==0:
+        actor.load_state_dict(torch.load('actormodel.pth'))
+        actor.eval()
+        critic.load_state_dict(torch.load('criticmodel.pth'))
+        critic.eval()
+        print("model load successfully")
 except:
     print("cannot find the model")
 
@@ -115,6 +122,9 @@ for i in range(2000):
         s_t = torch.unsqueeze(s_t, 0)
         s_t = s_t.permute(0,3,1,2)
         s_t = ftr_extractor(s_t.float()).squeeze()
+        c_t = np.hstack((ob.angle, ob.speedX, ob.speedY, ob.speedZ, ob.wheelSpinVel/100.0, ob.rpm))
+        c_t = torch.tensor(c_t, device=device).float()
+        s_t = torch.cat([s_t, c_t])
     
     sum_rewards = 0
     for j in range(100000):
@@ -168,6 +178,9 @@ for i in range(2000):
             s_t1 = torch.unsqueeze(s_t1, 0)
             s_t1 = s_t1.permute(0,3,1,2)
             s_t1 = ftr_extractor(s_t1.float()).squeeze()
+            c_t1 = np.hstack((ob.angle, ob.speedX, ob.speedY, ob.speedZ, ob.wheelSpinVel/100.0, ob.rpm))
+            c_t1 = torch.tensor(c_t1).float()
+            s_t1 = torch.cat([s_t1, c_t1])
 
         #add to replay buffer
         buff.add(s_t.cpu().detach().numpy(), a_t[0], r_t, s_t1.cpu().detach().numpy(), done)
@@ -243,9 +256,9 @@ for i in range(2000):
     if np.mod(i, 3) == 0:
         if (train_indicator):
             print("saving model")
-            torch.save(actor.state_dict(), 'actormodel.pth')
-            torch.save(critic.state_dict(), 'criticmodel.pth')
-            np.save('rewards_train', np.array(all_rewards))
+            torch.save(actor.state_dict(), exp + 'actormodel.pth')
+            torch.save(critic.state_dict(), exp + 'criticmodel.pth')
+            np.save(exp + 'rewards_train', np.array(all_rewards))
 
     
 env.end()

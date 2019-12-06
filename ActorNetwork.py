@@ -5,14 +5,15 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable as V
 
-
+HIDDEN_NEW = 32
 HIDDEN1_UNITS = 300
 HIDDEN2_UNITS = 600
 
 class ActorNetwork(nn.Module):
     def __init__(self, state_size):
         super(ActorNetwork, self).__init__()
-        self.fc1 = nn.Linear(state_size, HIDDEN1_UNITS)
+        self.fc = nn.Linear(state_size, HIDDEN_NEW)
+        self.fc1 = nn.Linear(HIDDEN_NEW, HIDDEN1_UNITS)
         self.fc2 = nn.Linear(HIDDEN1_UNITS, HIDDEN2_UNITS)
         self.steering = nn.Linear(HIDDEN2_UNITS, 1)
         nn.init.normal_(self.steering.weight, 0, 1e-4)
@@ -23,6 +24,7 @@ class ActorNetwork(nn.Module):
 
 
     def forward(self, x):
+        x = F.relu(self.fc(x))
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         out1 = t.tanh(self.steering(x))
