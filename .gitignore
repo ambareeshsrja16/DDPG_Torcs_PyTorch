@@ -4,3 +4,4 @@ __pycache__/*
 models/
 data/
 saved_images/
+.ipynb_checkpoints/
