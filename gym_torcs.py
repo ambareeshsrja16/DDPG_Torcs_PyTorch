@@ -59,6 +59,9 @@ class TorcsEnv:
             low = np.array([0., -np.inf, -np.inf, -np.inf, 0., -np.inf, 0., -np.inf, 0])
             self.observation_space = spaces.Box(low=low, high=high)
 
+        self.pre_action_0 = np.zeros(3, dtype=np.float32)
+        self.pre_action_1 = np.zeros(3, dtype=np.float32)
+
     def step(self, u):
        #print("Step")
         # convert thisAction to the actual torcs actionstr
@@ -113,6 +116,11 @@ class TorcsEnv:
                     action_torcs['gear'] = 6
         # Save the privious full-obs from torcs for the reward calculation
         obs_pre = copy.deepcopy(client.S.d)
+
+        self.pre_action_0 = self.pre_action_1
+        self.pre_action_1 = np.array([action_torcs['steer'],
+                                      action_torcs['accel'],
+                                      action_torcs['brake']])
 
         # One-Step Dynamics Update #################################
         # Apply the Agent's action into torcs
@@ -273,7 +281,7 @@ class TorcsEnv:
                      'track',
                      'trackPos',
                      'wheelSpinVel',
-                     'img']
+                     'img', 'pre_action_0', 'pre_action_1']
             Observation = col.namedtuple('Observaion', names)
 
             # Get RGB from observation
@@ -289,4 +297,6 @@ class TorcsEnv:
                                track=np.array(raw_obs['track'], dtype=np.float32)/200.,
                                trackPos=np.array(raw_obs['trackPos'], dtype=np.float32)/1.,
                                wheelSpinVel=np.array(raw_obs['wheelSpinVel'], dtype=np.float32),
-                               img=image_rgb)
+                               img=image_rgb,
+                                pre_action_0 = self.pre_action_0,
+                                pre_action_1 = self.pre_action_1)

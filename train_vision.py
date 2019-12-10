@@ -14,6 +14,7 @@ from CriticNetwork import CriticNetwork
 from OU import OU
 import torchvision
 from torchvision import transforms
+import shutil
 
 state_size = 29
 action_size = 3
@@ -30,12 +31,16 @@ TAU = 0.001
 
 VISION = True
 if VISION:
-    # state_size = 512 + car_state_size
-    state_size = 512
+    state_size = 512 + car_state_size
+    # state_size = 512
 
-exp = 'models/res_newh32_exp2/'
+exp = 'models/res_aux_exp1/'
 if not os.path.isdir(exp):
     os.mkdir(exp)
+
+for file_name in ['train_vision.py', 'ActorNetwork.py', 'CriticNetwork.py', 'gym_torcs.py']:
+    shutil.copy(file_name, exp)
+    print(file_name, '  -- backed up !!')
 
 
 SAVE_IMAGES = False # if set to True, will save rgb images (64,64) in current path under /saved_images
@@ -58,10 +63,10 @@ transform = transforms.Compose([            #[1]
  # transforms.Resize(256),                    #[2]
  # transforms.CenterCrop(224),                #[3]
  transforms.ToTensor(),                     #[4]
- transforms.Normalize(                      #[5]
- mean=[0.485, 0.456, 0.406],                #[6]
- std=[0.229, 0.224, 0.225]                  #[7]
- )])
+ # transforms.Normalize(                      #[5]
+ # mean=[0.5, 0.5, 0.5],                #[6]
+ # std=[0.5, 0.5, 0.5])                  #[7]
+ ])
 
 # feature extractor based on ResNet18, out_dim = 512
 ftr_extractor = torchvision.models.resnet18(pretrained=True)
@@ -116,16 +121,18 @@ for i in range(2000):
         s_t = np.hstack((ob.angle, ob.track, ob.trackPos, ob.speedX, ob.speedY, ob.speedZ, ob.wheelSpinVel/100.0, ob.rpm))
     else:
         # vision as input
-        s_t = np.rot90(ob.img.T)
-        # print(s_t.shape)
-        # s_t = transform(s_t)
+        s_t = np.rot90(ob.img.T)/255
+        # print(s_t.shape, s_t.max(), s_t.min(), type(s_t[0,0,0]))
         s_t = torch.tensor(s_t.copy(), device=device)
+        # s_t = transform(s_t)
         s_t = torch.unsqueeze(s_t, 0)
         s_t = s_t.permute(0,3,1,2)
         s_t = ftr_extractor(s_t.float()).squeeze()
         # c_t = np.hstack((ob.angle, ob.speedX, ob.speedY, ob.speedZ, ob.wheelSpinVel/100.0, ob.rpm))
-        # c_t = torch.tensor(c_t, device=device).float()
-        # s_t = torch.cat([s_t, c_t])
+        c_t = np.hstack((ob.speedX, ob.speedY, ob.speedZ, ob.pre_action_0[0], ob.pre_action_0[1], ob.pre_action_0[2],
+                               ob.pre_action_1[0], ob.pre_action_1[1], ob.pre_action_1[2]))
+        c_t = torch.tensor(c_t, device=device).float()
+        s_t = torch.cat([s_t, c_t])
     
     sum_rewards = 0
     for j in range(100000):
@@ -173,15 +180,17 @@ for i in range(2000):
         if not VISION:
             s_t1 = np.hstack((ob.angle, ob.track, ob.trackPos, ob.speedX, ob.speedY, ob.speedZ, ob.wheelSpinVel/100.0, ob.rpm))
         else:
-            s_t1 = np.rot90(ob.img.T)
+            s_t1 = np.rot90(ob.img.T)/255
             # s_t1 = ftr_extractor(torch.unsqueeze(transform(s_t1), 0)).squeeze()
             s_t1 = torch.tensor(s_t1.copy())
             s_t1 = torch.unsqueeze(s_t1, 0)
             s_t1 = s_t1.permute(0,3,1,2)
             s_t1 = ftr_extractor(s_t1.float()).squeeze()
             # c_t1 = np.hstack((ob.angle, ob.speedX, ob.speedY, ob.speedZ, ob.wheelSpinVel/100.0, ob.rpm))
-            # c_t1 = torch.tensor(c_t1).float()
-            # s_t1 = torch.cat([s_t1, c_t1])
+            c_t1 = np.hstack((ob.speedX, ob.speedY, ob.speedZ, ob.pre_action_0[0], ob.pre_action_0[1], ob.pre_action_0[2],
+                       ob.pre_action_1[0], ob.pre_action_1[1], ob.pre_action_1[2]))
+            c_t1 = torch.tensor(c_t1).float()
+            s_t1 = torch.cat([s_t1, c_t1])
 
         #add to replay buffer
         buff.add(s_t.cpu().detach().numpy(), a_t[0], r_t, s_t1.cpu().detach().numpy(), done)

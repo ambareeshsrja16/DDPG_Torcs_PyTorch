@@ -30,10 +30,10 @@ TAU = 0.001
 
 VISION = True
 if VISION:
-    state_size = 512
-    # state_size = 512 + car_state_size
+    # state_size = 512
+    state_size = 512 + car_state_size
 
-exp = 'models/res_newh32/'
+exp = 'models/res_aux_exp1/'
 if not os.path.isdir(exp):
     os.mkdir(exp)
 
@@ -90,10 +90,10 @@ target_actor.eval()
 target_critic.load_state_dict(critic.state_dict())
 target_critic.eval()
 
-criterion_critic = torch.nn.MSELoss(reduction='sum')
+# criterion_critic = torch.nn.MSELoss(reduction='sum')
 
-optimizer_actor = torch.optim.Adam(actor.parameters(), lr=LRA)
-optimizer_critic = torch.optim.Adam(critic.parameters(), lr=LRC)
+# optimizer_actor = torch.optim.Adam(actor.parameters(), lr=LRA)
+# optimizer_critic = torch.optim.Adam(critic.parameters(), lr=LRC)
 
 #env environment
 env = TorcsEnv(vision=VISION, throttle=True, gear_change=False)
@@ -116,7 +116,7 @@ for i in range(2000):
         s_t = np.hstack((ob.angle, ob.track, ob.trackPos, ob.speedX, ob.speedY, ob.speedZ, ob.wheelSpinVel/100.0, ob.rpm))
     else:
         # vision as input
-        s_t = np.rot90(ob.img.T)
+        s_t = np.rot90(ob.img.T)/255
         # print(s_t.shape)
         # s_t = transform(s_t)
         s_t = torch.tensor(s_t.copy(), device=device)
@@ -124,8 +124,10 @@ for i in range(2000):
         s_t = s_t.permute(0,3,1,2)
         s_t = ftr_extractor(s_t.float()).squeeze()
         # c_t = np.hstack((ob.angle, ob.speedX, ob.speedY, ob.speedZ, ob.wheelSpinVel/100.0, ob.rpm))
-        # c_t = torch.tensor(c_t, device=device).float()
-        # s_t = torch.cat([s_t, c_t])
+        c_t = np.hstack((ob.speedX, ob.speedY, ob.speedZ, ob.pre_action_0[0], ob.pre_action_0[1], ob.pre_action_0[2],
+                           ob.pre_action_1[0], ob.pre_action_1[1], ob.pre_action_1[2]))
+        c_t = torch.tensor(c_t, device=device).float()
+        s_t = torch.cat([s_t, c_t])
     
     sum_rewards = 0
     for j in range(100000):
@@ -173,36 +175,40 @@ for i in range(2000):
         if not VISION:
             s_t1 = np.hstack((ob.angle, ob.track, ob.trackPos, ob.speedX, ob.speedY, ob.speedZ, ob.wheelSpinVel/100.0, ob.rpm))
         else:
-            s_t1 = np.rot90(ob.img.T)
+            s_t1 = np.rot90(ob.img.T)/255
             # s_t1 = ftr_extractor(torch.unsqueeze(transform(s_t1), 0)).squeeze()
             s_t1 = torch.tensor(s_t1.copy())
             s_t1 = torch.unsqueeze(s_t1, 0)
             s_t1 = s_t1.permute(0,3,1,2)
             s_t1 = ftr_extractor(s_t1.float()).squeeze()
             # c_t1 = np.hstack((ob.angle, ob.speedX, ob.speedY, ob.speedZ, ob.wheelSpinVel/100.0, ob.rpm))
-            # c_t1 = torch.tensor(c_t1).float()
-            # s_t1 = torch.cat([s_t1, c_t1])
+            c_t1 = np.hstack((ob.speedX, ob.speedY, ob.speedZ, ob.pre_action_0[0], ob.pre_action_0[1], ob.pre_action_0[2],
+                               ob.pre_action_1[0], ob.pre_action_1[1], ob.pre_action_1[2]))
+            # c_t1 = np.hstack((ob.speedX, ob.speedY, ob.speedZ, 0,0,0,
+            #                    0,0,0))
+            c_t1 = torch.tensor(c_t1, device=device).float()
+            s_t1 = torch.cat([s_t1, c_t1])
 
-        #add to replay buffer
-        buff.add(s_t.cpu().detach().numpy(), a_t[0], r_t, s_t1.cpu().detach().numpy(), done)
+        # #add to replay buffer
+        # buff.add(s_t.cpu().detach().numpy(), a_t[0], r_t, s_t1.cpu().detach().numpy(), done)
 
-        batch = buff.getBatch(BATCH_SIZE)
+        # batch = buff.getBatch(BATCH_SIZE)
 
-        states = torch.tensor(np.asarray([e[0] for e in batch]), device=device).float()    #torch.cat(batch[0])
-        actions = torch.tensor(np.asarray([e[1] for e in batch]), device=device).float()
-        rewards = torch.tensor(np.asarray([e[2] for e in batch]), device=device).float()
-        new_states = torch.tensor(np.asarray([e[3] for e in batch]), device=device).float()
-        dones = np.asarray([e[4] for e in batch])
-        y_t = torch.tensor(np.asarray([e[1] for e in batch]), device=device).float()
+        # states = torch.tensor(np.asarray([e[0] for e in batch]), device=device).float()    #torch.cat(batch[0])
+        # actions = torch.tensor(np.asarray([e[1] for e in batch]), device=device).float()
+        # rewards = torch.tensor(np.asarray([e[2] for e in batch]), device=device).float()
+        # new_states = torch.tensor(np.asarray([e[3] for e in batch]), device=device).float()
+        # dones = np.asarray([e[4] for e in batch])
+        # y_t = torch.tensor(np.asarray([e[1] for e in batch]), device=device).float()
         
-        #use target network to calculate target_q_value
-        target_q_values = target_critic(new_states, target_actor(new_states))
+        # #use target network to calculate target_q_value
+        # target_q_values = target_critic(new_states, target_actor(new_states))
 
-        for k in range(len(batch)):
-            if dones[k]:
-                y_t[k] = rewards[k]
-            else:
-                y_t[k] = rewards[k] + GAMMA * target_q_values[k]
+        # for k in range(len(batch)):
+        #     if dones[k]:
+        #         y_t[k] = rewards[k]
+        #     else:
+        #         y_t[k] = rewards[k] + GAMMA * target_q_values[k]
 
         if(train_indicator):
             
