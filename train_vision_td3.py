@@ -34,11 +34,11 @@ if VISION:
     state_size = 512 + car_state_size
     # state_size = 512
 
-exp = 'models/res_aux_exp11/'
+exp = 'models/res_aux_td3_exp3/'
 if not os.path.isdir(exp):
     os.mkdir(exp)
 
-for file_name in ['train_vision.py', 'ActorNetwork.py', 'CriticNetwork.py', 'gym_torcs.py']:
+for file_name in ['train_vision_td3.py', 'train_vision.py', 'ActorNetwork.py', 'CriticNetwork.py', 'gym_torcs.py']:
     shutil.copy(file_name, exp)
     print(file_name, '  -- backed up !!')
 
@@ -57,7 +57,8 @@ def init_weights(m):
 
 actor = ActorNetwork(state_size).to(device)
 actor.apply(init_weights)
-critic = CriticNetwork(state_size, action_size).to(device)
+critic_1 = CriticNetwork(state_size, action_size).to(device)
+critic_2 = CriticNetwork(state_size, action_size).to(device)
 
 transform = transforms.Compose([            #[1]
  # transforms.Resize(256),                    #[2]
@@ -89,16 +90,26 @@ except:
 buff = ReplayBuffer(BUFFER_SIZE)
 
 target_actor = ActorNetwork(state_size).to(device)
-target_critic = CriticNetwork(state_size, action_size).to(device)
+target_critic_1 = CriticNetwork(state_size, action_size).to(device)
+target_critic_2 = CriticNetwork(state_size, action_size).to(device)
+
 target_actor.load_state_dict(actor.state_dict())
 target_actor.eval()
-target_critic.load_state_dict(critic.state_dict())
-target_critic.eval()
+target_critic_1.load_state_dict(critic_1.state_dict())
+target_critic_1.eval()
+target_critic_2.load_state_dict(critic_2.state_dict())
+target_critic_2.eval()
 
 criterion_critic = torch.nn.MSELoss(reduction='sum')
 
 optimizer_actor = torch.optim.Adam(actor.parameters(), lr=LRA)
-optimizer_critic = torch.optim.Adam(critic.parameters(), lr=LRC)
+optimizer_critic_1 = torch.optim.Adam(critic_1.parameters(), lr=LRC)
+optimizer_critic_2 = torch.optim.Adam(critic_2.parameters(), lr=LRC)
+policy_delay = 2
+policy_noise = 0.2
+noise_clip = 0.5
+max_action = 1
+
 
 #env environment
 env = TorcsEnv(vision=VISION, throttle=True, gear_change=False)
@@ -110,7 +121,7 @@ else:
 
 all_rewards = []
 
-for i in range(2000):
+for i in range(5000):
 
     if np.mod(i, 3) == 0:
         ob = env.reset(relaunch = True)
@@ -205,7 +216,16 @@ for i in range(2000):
         y_t = torch.tensor(np.asarray([e[1] for e in batch]), device=device).float()
         
         #use target network to calculate target_q_value
-        target_q_values = target_critic(new_states, target_actor(new_states))
+        next_action = target_actor(new_states)
+        # noise, td3
+        with torch.no_grad():
+            noise = (torch.randn_like(actions) * policy_noise).clamp(-noise_clip, noise_clip)
+            next_action = (next_action + noise).clamp(-max_action, max_action)
+
+        target_q1 = target_critic_1(new_states, next_action)
+        target_q2 = target_critic_2(new_states, next_action)
+        target_q_values = torch.min(target_q1, target_q2)
+        # target_q_values = target_critic(new_states, target_actor(new_states))
 
         for k in range(len(batch)):
             if dones[k]:
@@ -216,43 +236,57 @@ for i in range(2000):
         if(train_indicator):
             
             #training
-            q_values = critic(states, actions)
-            loss = criterion_critic(y_t, q_values)  
-            optimizer_critic.zero_grad()
-            loss.backward(retain_graph=True)                         ##for param in critic.parameters(): param.grad.data.clamp(-1, 1)
-            optimizer_critic.step()
+            # optimize critic 1
+            q1_values = critic_1(states, actions)
+            loss_q1 = criterion_critic(y_t, q1_values)  
+            optimizer_critic_1.zero_grad()
+            loss_q1.backward(retain_graph=True)                         ##for param in critic.parameters(): param.grad.data.clamp(-1, 1)
+            optimizer_critic_1.step()
 
-            a_for_grad = actor(states)
-            a_for_grad.requires_grad_()    #enables the requires_grad of a_for_grad
-            q_values_for_grad = critic(states, a_for_grad)
-            critic.zero_grad()
-            q_sum = q_values_for_grad.sum()
-            q_sum.backward(retain_graph=True)
+            # optimize critic 2
+            q2_values = critic_2(states, actions)
+            loss_q2 = criterion_critic(y_t, q2_values)  
+            optimizer_critic_2.zero_grad()
+            loss_q2.backward(retain_graph=True)                         ##for param in critic.parameters(): param.grad.data.clamp(-1, 1)
+            optimizer_critic_2.step()
 
-            grads = torch.autograd.grad(q_sum, a_for_grad) #a_for_grad is not a leaf node  
-            #grads is a tuple, while grads[0] is what we want
+            if j % policy_delay == 0:
+                a_for_grad = actor(states)
+                a_for_grad.requires_grad_()    #enables the requires_grad of a_for_grad
+                q_values_for_grad = critic_1(states, a_for_grad)
+                critic_1.zero_grad()
+                q_sum = q_values_for_grad.sum()
+                q_sum.backward(retain_graph=True)
 
-            #grads[0] = -grads[0]
-            #print(grads)   
+                grads = torch.autograd.grad(q_sum, a_for_grad) #a_for_grad is not a leaf node  
+                #grads is a tuple, while grads[0] is what we want
 
-            act = actor(states)
-            actor.zero_grad()
-            act.backward(-grads[0])
-            optimizer_actor.step()
+                #grads[0] = -grads[0]
+                #print(grads)   
 
-            #soft update for target network
-            #actor_params = list(actor.parameters())
-            #critic_params = list(critic.parameters())
-            print("soft updates target network")
-            new_actor_state_dict = collections.OrderedDict()
-            new_critic_state_dict = collections.OrderedDict()
-            for var_name in target_actor.state_dict():
-                new_actor_state_dict[var_name] = TAU * actor.state_dict()[var_name] + (1-TAU) * target_actor.state_dict()[var_name]
-            target_actor.load_state_dict(new_actor_state_dict)
+                act = actor(states)
+                actor.zero_grad()
+                act.backward(-grads[0])
+                optimizer_actor.step()
 
-            for var_name in target_critic.state_dict():
-                new_critic_state_dict[var_name] = TAU * critic.state_dict()[var_name] + (1-TAU) * target_critic.state_dict()[var_name]
-            target_critic.load_state_dict(new_critic_state_dict)
+                #soft update for target network
+                #actor_params = list(actor.parameters())
+                #critic_params = list(critic.parameters())
+                print("soft updates target network")
+                new_actor_state_dict = collections.OrderedDict()
+                new_critic_1_state_dict = collections.OrderedDict()
+                new_critic_2_state_dict = collections.OrderedDict()
+                for var_name in target_actor.state_dict():
+                    new_actor_state_dict[var_name] = TAU * actor.state_dict()[var_name] + (1-TAU) * target_actor.state_dict()[var_name]
+                target_actor.load_state_dict(new_actor_state_dict)
+
+                for var_name in target_critic_1.state_dict():
+                    new_critic_1_state_dict[var_name] = TAU * critic_1.state_dict()[var_name] + (1-TAU) * target_critic_1.state_dict()[var_name]
+                target_critic_1.load_state_dict(new_critic_1_state_dict)
+
+                for var_name in target_critic_2.state_dict():
+                    new_critic_2_state_dict[var_name] = TAU * critic_2.state_dict()[var_name] + (1-TAU) * target_critic_2.state_dict()[var_name]
+                target_critic_2.load_state_dict(new_critic_2_state_dict)
         
         s_t = s_t1
         sum_rewards += r_t
@@ -267,7 +301,8 @@ for i in range(2000):
         if (train_indicator):
             print("saving model")
             torch.save(actor.state_dict(), exp + 'actormodel.pth')
-            torch.save(critic.state_dict(), exp + 'criticmodel.pth')
+            torch.save(critic_1.state_dict(), exp + 'criticmodel.pth')
+            torch.save(critic_2.state_dict(), exp + 'criticmodel_2.pth')
             np.save(exp + 'rewards_train', np.array(all_rewards))
 
     
